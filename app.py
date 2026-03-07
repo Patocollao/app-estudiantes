@@ -56,13 +56,17 @@ if archivos or texto_pegado:
                     def limpiar_fecha(val):
                         val = str(val).split(' ')[0].replace('.0', '')
                         if len(val) == 8 and val.isdigit(): 
-                            return f"{val[:4]}-{val[4:6]}-{val[6:]}"
+                            # Formato DD-MM-YYYY para el sistema diario
+                            return f"{val[6:]}-{val[4:6]}-{val[:4]}"
                         return val
                         
                     if 'FECHA_INICIO' in df.columns:
                         df['FECHA_CLEAN'] = df['FECHA_INICIO'].apply(limpiar_fecha)
-                        df['FECHA_FORMATEADA'] = pd.to_datetime(df['FECHA_CLEAN'], errors='ignore').astype(str).str.split(' ').str[0]
-                        df = df[df['FECHA_FORMATEADA'] == str(fecha_filtro)].copy()
+                        # Tratar de formatear a DD-MM-YYYY de forma consistente
+                        df['FECHA_FORMATEADA'] = pd.to_datetime(df['FECHA_CLEAN'], errors='coerce').dt.strftime('%d-%m-%Y').fillna(df['FECHA_CLEAN'])
+                        # Para el filtro con el calendario de Streamlit (que devuelve YYYY-MM-DD), transformamos a DD-MM-YYYY
+                        fecha_str = fecha_filtro.strftime('%d-%m-%Y') if fecha_filtro else ""
+                        df = df[df['FECHA_FORMATEADA'] == fecha_str].copy()
                     
                     if 'RUT' in df.columns:
                         df['RUT'] = df['RUT'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
@@ -91,7 +95,6 @@ if archivos or texto_pegado:
 
             # --- LÓGICA B: LA TRITURADORA DEFINITIVA (Web/Texto Pegado) ---
             else:
-                # 1. Unir absolutamente todo el texto para no perder nada
                 texto_total_unido = ""
                 
                 if "Pegar texto" in tipo_formato and texto_pegado:
@@ -108,10 +111,8 @@ if archivos or texto_pegado:
                             lista_lineas.append(" ".join([x for x in fila if x]))
                     texto_total_unido = "\n".join(lista_lineas)
 
-                # 2. Dividir en bloques por curso usando "NOMBRE:"
                 bloques_cursos = re.split(r'(?i)NOMBRE:', texto_total_unido)
                 
-                # Expresión regular que NO se rompe con las mayúsculas/minúsculas
                 patron_estudiante = re.compile(
                     r'(\d{7,8}[0-9Kk])(.*?)((?:[a-zA-Z0-9._\-]+)@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\s*(\d{4,8})\s*(Estudiante|Docente[a-zA-Z\s\(\)]*)', 
                     re.IGNORECASE | re.DOTALL
@@ -120,7 +121,6 @@ if archivos or texto_pegado:
                 for bloque in bloques_cursos:
                     if not bloque.strip(): continue
                     
-                    # Extraer cabeceras del curso saltando la basura visual
                     match_curso = re.search(r'^\s*(.*?)(?=\s*C[ÓO]DIGO DE CURSO:)', bloque, re.IGNORECASE | re.DOTALL)
                     match_codigo = re.search(r'C[ÓO]DIGO DE CURSO:\s*([A-Za-z]+)\s*(\d+)\.(\d+)\.(\d+)', bloque, re.IGNORECASE)
                     match_inicio = re.search(r'INICIO:\s*(\d{2}[/-]\d{2}[/-]\d{4})', bloque, re.IGNORECASE)
@@ -131,18 +131,18 @@ if archivos or texto_pegado:
                     periodo = match_codigo.group(3) if match_codigo else ""
                     nrc = match_codigo.group(4) if match_codigo else ""
                     
-                    # Formateo de fecha
+                    # 🗓️ CAMBIO APLICADO: Formateo de fecha estricto a DD-MM-YYYY
                     fecha_inicio = ""
                     if match_inicio:
                         f_raw = match_inicio.group(1).replace('/', '-')
                         partes = f_raw.split('-')
                         if len(partes) == 3:
-                            fecha_inicio = f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
+                            # partes[0] = DD, partes[1] = MM, partes[2] = YYYY
+                            fecha_inicio = f"{partes[0].zfill(2)}-{partes[1].zfill(2)}-{partes[2]}"
                     
                     nrc_cod = f"{nrc}_{materia}{curso}" if nrc and materia else ""
                     rut_por_nrc = set()
                     
-                    # Buscar estudiantes en este bloque
                     for m in patron_estudiante.finditer(bloque):
                         rut_raw = m.group(1).upper()
                         crudo_nombre = m.group(2)
@@ -150,11 +150,9 @@ if archivos or texto_pegado:
                         pidm = m.group(4)
                         rol_est = m.group(5).strip()
                         
-                        # Ignorar docentes
                         if rol_est and "ESTUDIANTE" not in rol_est.upper():
                             continue
                             
-                        # TRUCO DE MAGIA: Usar las mayúsculas para separar el apellido que se pegó al correo
                         match_separacion = re.match(r'^([A-ZÁÉÍÓÚÑÜ]*)([a-z0-9._\-]+@.*)$', crudo_email)
                         if match_separacion:
                             apellido = match_separacion.group(1)
@@ -164,7 +162,6 @@ if archivos or texto_pegado:
                             nombre_est = " ".join(crudo_nombre.split())
                             email_est = crudo_email.strip()
                             
-                        # Evitar duplicados
                         clave_dup = f"{nrc}_{rut_raw}"
                         if clave_dup in rut_por_nrc: continue
                         rut_por_nrc.add(clave_dup)
