@@ -109,10 +109,9 @@ if archivos or texto_pegado:
                 nombre_curso, periodo, nrc, materia, curso, fecha_inicio = "", "", "", "", "", ""
                 rut_por_nrc = set()
                 
-                # LA MAGIA REPARADA: Corta estrictamente después del .edu o .cl para no comerse el PIDM
+                # EL SECRETO: El nombre es en MAYUSCULAS y el correo en MINUSCULAS.
                 patron_estudiante = re.compile(
-                    r'(\d{7,8}[0-9Kk])([A-Za-zÁÉÍÓÚÑÜáéíóúñü \-]+?)([a-zA-Z0-9._\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\s*(\d+)\s*(Estudiante|Docente[^\d]*?)(?:\d{2}-\d{2}-\d{4})?', 
-                    re.IGNORECASE
+                    r'(\d{7,8}[0-9Kk])([A-ZÁÉÍÓÚÑÜ \-]+?)([a-z0-9._\-]+@[a-z0-9.\-]+\.[a-z]{2,})\s*(\d+)\s*(Estudiante|Docente[^\d]*?)(?:\d{2}-\d{2}-\d{4})?'
                 )
 
                 for linea in lista_textos_a_procesar:
@@ -151,15 +150,14 @@ if archivos or texto_pegado:
                             fecha_inicio = fecha_raw
                         continue
 
-                    # Escanea a todos los estudiantes dentro de la misma línea pegada
+                    # Escanear a todos los estudiantes dentro de la misma línea pegada sin alterar mayúsculas/minúsculas
                     for match_est in patron_estudiante.finditer(linea_str):
                         rut_raw = match_est.group(1).upper()
                         nombre_est = match_est.group(2).strip()
                         email_est = match_est.group(3).strip()
-                        # El grupo 4 es el PIDM (ej. 414003), lo saltamos. El grupo 5 es el Rol.
                         rol_est = match_est.group(5)
 
-                        # Ignorar docentes
+                        # Ignorar docentes (insensibilidad a mayúsculas para la validación del rol)
                         if rol_est and "ESTUDIANTE" not in rol_est.upper():
                             continue
                             
