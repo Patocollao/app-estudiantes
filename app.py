@@ -8,6 +8,11 @@ st.set_page_config(page_title="Formateador SharePoint", page_icon="⚡")
 st.title("⚡ Formateador Universal de Estudiantes")
 st.markdown("Sube archivos o pega los datos directamente de la web para obtener tu tabla lista para Power Automate.")
 
+# Pon esto justo debajo de st.title y st.markdown
+col1, col2 = st.columns([8, 2])
+with col2:
+    if st.button("🧹 Limpiar Todo"):
+        st.rerun()
 # SELECTOR DE TRES OPCIONES
 tipo_formato = st.radio(
     "Selecciona el método de entrada:",
