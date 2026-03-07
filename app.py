@@ -8,7 +8,7 @@ st.set_page_config(page_title="Formateador SharePoint", page_icon="⚡")
 st.title("⚡ Formateador Universal de Estudiantes")
 st.markdown("Sube archivos o pega los datos directamente de la web para obtener tu tabla lista para Power Automate.")
 
-# 1. SELECTOR DE TRES OPCIONES
+# SELECTOR DE TRES OPCIONES
 tipo_formato = st.radio(
     "Selecciona el método de entrada:",
     [
@@ -34,7 +34,6 @@ else:
     st.info("💡 Ve a la web de tus cursos, selecciona todo el texto, presiona Ctrl+C y pégalo abajo con Ctrl+V. Puedes pegar varios cursos uno debajo del otro.")
     texto_pegado = st.text_area("📋 Pega aquí los datos de la web:", height=300)
 
-# Botón de procesamiento dinámico
 if archivos or texto_pegado:
     if st.button("⚡ Procesar Datos"):
         try:
@@ -95,8 +94,16 @@ if archivos or texto_pegado:
                 lista_dataframes_raw = []
                 
                 if "Pegar texto" in tipo_formato and texto_pegado:
-                    # Convertir el texto pegado en una cuadrícula (como si fuera un Excel)
-                    filas_texto = [linea.split('\t') for linea in texto_pegado.strip().split('\n')]
+                    filas_texto = []
+                    # BLINDAJE: Detectamos si hay tabulaciones o si el navegador pegó espacios en blanco
+                    for linea in texto_pegado.strip().split('\n'):
+                        linea_limpia = linea.strip()
+                        if not linea_limpia: continue
+                        if '\t' in linea_limpia:
+                            filas_texto.append(linea_limpia.split('\t'))
+                        else:
+                            # Fallback: Cortamos por 2 o más espacios consecutivos
+                            filas_texto.append(re.split(r'\s{2,}', linea_limpia))
                     lista_dataframes_raw.append(pd.DataFrame(filas_texto).fillna(""))
                     
                 elif "Descarga Manual Web" in tipo_formato and archivos:
@@ -106,7 +113,6 @@ if archivos or texto_pegado:
                         else:
                             lista_dataframes_raw.append(pd.read_excel(archivo, header=None).fillna(""))
 
-                # Procesar todos los bloques de datos (ya sea que vinieron de archivos o del cuadro de texto)
                 for df_raw in lista_dataframes_raw:
                     nombre_curso, periodo, nrc, materia, curso, fecha_inicio = "", "", "", "", "", ""
                     en_tabla = False
@@ -114,18 +120,20 @@ if archivos or texto_pegado:
                     rut_por_nrc = set()
                     
                     for index, row in df_raw.iterrows():
-                        fila = [str(x).strip() for x in row.tolist()]
-                        if all(x == "" for x in fila): continue
+                        fila_cruda = [str(x).strip() for x in row.tolist()]
+                        fila = [x for x in fila_cruda if x != ""]
+                        if not fila: continue
                         
-                        celda0 = fila[0].upper()
+                        texto_fila = " ".join(fila)
+                        texto_upper = texto_fila.upper()
                         
-                        if celda0.startswith("NOMBRE:"):
-                            nombre_curso = fila[0][7:].strip()
+                        if texto_upper.startswith("NOMBRE:"):
+                            nombre_curso = texto_fila[7:].strip()
                             en_tabla = False
                             continue
                             
-                        if celda0.startswith("CÓDIGO DE CURSO:"):
-                            codigo = fila[0][16:].strip()
+                        if texto_upper.startswith("CÓDIGO DE CURSO:"):
+                            codigo = texto_fila[16:].strip()
                             partes = codigo.split(".")
                             if len(partes) >= 3:
                                 materia_completa = partes[0].strip()
@@ -134,54 +142,53 @@ if archivos or texto_pegado:
                                 
                                 match = re.match(r'^([A-Za-z]+)(\d+)$', materia_completa)
                                 if match:
-                                    materia = match.group(1)
+                                    materia = match.group(1).upper()
                                     curso = match.group(2).zfill(3)
                                 else:
-                                    materia = materia_completa
+                                    materia = materia_completa.upper()
                                     curso = ""
                             continue
                             
-                        if celda0.startswith("INICIO:"):
-                            fecha_raw = fila[0][7:].strip()
+                        if texto_upper.startswith("INICIO:"):
+                            fecha_raw = texto_fila[7:].strip()
                             partes_fecha = fecha_raw.split("/")
                             if len(partes_fecha) == 3:
                                 fecha_inicio = f"{partes_fecha[2]}-{partes_fecha[1].zfill(2)}-{partes_fecha[0].zfill(2)}"
                             else:
                                 fecha_inicio = fecha_raw
                             continue
-                            
-                        if celda0.lower() == "rut" or "rut" in [x.lower() for x in fila]:
-                            en_tabla = True
-                            fila_lower = [x.lower() for x in fila]
-                            idx_rut = fila_lower.index("rut") if "rut" in fila_lower else -1
-                            
-                            if "nombre completo" in fila_lower: idx_nombre = fila_lower.index("nombre completo")
-                            elif "nombres" in fila_lower: idx_nombre = fila_lower.index("nombres")
-                            elif "nombre" in fila_lower: idx_nombre = fila_lower.index("nombre")
-                            
-                            idx_email = fila_lower.index("email") if "email" in fila_lower else -1
-                            idx_rol = fila_lower.index("rol") if "rol" in fila_lower else -1
+                        
+                        # BLINDAJE DE ENCABEZADOS: Usamos los índices de la fila original
+                        fila_lower = [str(x).strip().lower() for x in row.tolist()]
+                        
+                        if not en_tabla:
+                            if "rut" in fila_lower or any(col == "rut" for col in fila_lower):
+                                en_tabla = True
+                                idx_rut, idx_nombre, idx_email, idx_rol = -1, -1, -1, -1
+                                for i, col in enumerate(fila_lower):
+                                    if col == "rut": idx_rut = i
+                                    elif "nombre" in col: idx_nombre = i
+                                    elif "email" in col or "correo" in col: idx_email = i
+                                    elif "rol" in col: idx_rol = i
                             continue
                             
                         if not en_tabla: continue
-                        if idx_rol != -1 and fila[idx_rol].lower() != "estudiante": continue
-                        if idx_rut != -1 and idx_rut < len(fila):
-                            rut_raw = fila[idx_rut].replace(".0", "")
-                            if not rut_raw: continue
+                        
+                        if idx_rut != -1 and idx_rut < len(row):
+                            rut_raw = str(row.iloc[idx_rut]).replace(".0", "").strip()
+                            if not rut_raw or rut_raw.lower() == "rut" or rut_raw.lower() == "nan": continue
+                            
+                            if idx_rol != -1 and idx_rol < len(row):
+                                rol_val = str(row.iloc[idx_rol]).strip().lower()
+                                if "estudiante" not in rol_val: continue
                             
                             clave_dup = f"{nrc}_{rut_raw}"
                             if clave_dup in rut_por_nrc: continue
                             rut_por_nrc.add(clave_dup)
                             
                             nrc_cod = f"{nrc}_{materia}{curso}"
-                            nombre_estudiante = fila[idx_nombre] if idx_nombre != -1 and idx_nombre < len(fila) else ""
-                            
-                            if idx_nombre != -1 and "apellidos" in [str(x).lower() for x in df_raw.iloc[0].tolist()]:
-                                idx_apellido = [str(x).lower() for x in df_raw.iloc[0].tolist()].index("apellidos")
-                                if idx_apellido < len(fila):
-                                    nombre_estudiante = f"{fila[idx_nombre]} {fila[idx_apellido]}"
-
-                            email_estudiante = fila[idx_email] if idx_email != -1 and idx_email < len(fila) else ""
+                            nombre_estudiante = str(row.iloc[idx_nombre]).strip() if idx_nombre != -1 and idx_nombre < len(row) else ""
+                            email_estudiante = str(row.iloc[idx_email]).strip() if idx_email != -1 and idx_email < len(row) else ""
                             
                             filas_destino_globales.append([
                                 periodo, nrc_cod, nombre_curso, fecha_inicio, 
@@ -194,6 +201,11 @@ if archivos or texto_pegado:
                 'RUT', 'NOMBRE', 'CORREO_UNAB', 'Columna7'
             ])
             df_final_maestro = df_final_maestro.replace("nan", "")
+            
+            # Verificación por si la tabla quedó vacía
+            if df_final_maestro.empty:
+                st.warning("⚠️ El proceso terminó, pero no se extrajo ningún estudiante. Asegúrate de estar copiando desde la palabra 'NOMBRE:' hasta el final de la tabla.")
+                st.stop()
             
             output = io.BytesIO()
             writer = pd.ExcelWriter(output, engine='xlsxwriter')
