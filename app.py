@@ -89,13 +89,15 @@ if archivos or texto_pegado:
                     
                     filas_destino_globales.extend(df_final_temp.values.tolist())
 
-            # --- LÓGICA B: EL ESCÁNER "LÁSER" (Web/Texto Pegado) ---
+            # --- LÓGICA B: LA TRITURADORA DEFINITIVA (Web/Texto Pegado) ---
             else:
-                lista_textos_a_procesar = []
+                # 1. Unir absolutamente todo el texto para no perder nada
+                texto_total_unido = ""
                 
                 if "Pegar texto" in tipo_formato and texto_pegado:
-                    lista_textos_a_procesar = texto_pegado.split('\n')
+                    texto_total_unido = texto_pegado
                 elif "Descarga Manual Web" in tipo_formato and archivos:
+                    lista_lineas = []
                     for archivo in archivos:
                         if archivo.name.endswith('.csv'):
                             df_raw = pd.read_csv(archivo, sep=None, engine='python').fillna("")
@@ -103,69 +105,69 @@ if archivos or texto_pegado:
                             df_raw = pd.read_excel(archivo, header=None).fillna("")
                         for index, row in df_raw.iterrows():
                             fila = [str(x).strip() for x in row.tolist()]
-                            texto_fila = " ".join([x for x in fila if x])
-                            lista_textos_a_procesar.append(texto_fila)
+                            lista_lineas.append(" ".join([x for x in fila if x]))
+                    texto_total_unido = "\n".join(lista_lineas)
 
-                nombre_curso, periodo, nrc, materia, curso, fecha_inicio = "", "", "", "", "", ""
-                rut_por_nrc = set()
+                # 2. Dividir en bloques por curso usando "NOMBRE:"
+                bloques_cursos = re.split(r'(?i)NOMBRE:', texto_total_unido)
                 
-                # EL SECRETO: El nombre es en MAYUSCULAS y el correo en MINUSCULAS.
+                # Expresión regular que NO se rompe con las mayúsculas/minúsculas
                 patron_estudiante = re.compile(
-                    r'(\d{7,8}[0-9Kk])([A-ZÁÉÍÓÚÑÜ \-]+?)([a-z0-9._\-]+@[a-z0-9.\-]+\.[a-z]{2,})\s*(\d+)\s*(Estudiante|Docente[^\d]*?)(?:\d{2}-\d{2}-\d{4})?'
+                    r'(\d{7,8}[0-9Kk])(.*?)((?:[a-zA-Z0-9._\-]+)@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\s*(\d{4,8})\s*(Estudiante|Docente[a-zA-Z\s\(\)]*)', 
+                    re.IGNORECASE | re.DOTALL
                 )
 
-                for linea in lista_textos_a_procesar:
-                    linea_str = linea.strip()
-                    if not linea_str: continue
+                for bloque in bloques_cursos:
+                    if not bloque.strip(): continue
                     
-                    linea_upper = linea_str.upper()
+                    # Extraer cabeceras del curso saltando la basura visual
+                    match_curso = re.search(r'^\s*(.*?)(?=\s*C[ÓO]DIGO DE CURSO:)', bloque, re.IGNORECASE | re.DOTALL)
+                    match_codigo = re.search(r'C[ÓO]DIGO DE CURSO:\s*([A-Za-z]+)\s*(\d+)\.(\d+)\.(\d+)', bloque, re.IGNORECASE)
+                    match_inicio = re.search(r'INICIO:\s*(\d{2}[/-]\d{2}[/-]\d{4})', bloque, re.IGNORECASE)
                     
-                    if linea_upper.startswith("NOMBRE:"):
-                        nombre_curso = linea_str[7:].strip()
-                        continue
+                    nombre_curso = match_curso.group(1).strip() if match_curso else ""
+                    materia = match_codigo.group(1).upper() if match_codigo else ""
+                    curso = match_codigo.group(2).zfill(3) if match_codigo else ""
+                    periodo = match_codigo.group(3) if match_codigo else ""
+                    nrc = match_codigo.group(4) if match_codigo else ""
+                    
+                    # Formateo de fecha
+                    fecha_inicio = ""
+                    if match_inicio:
+                        f_raw = match_inicio.group(1).replace('/', '-')
+                        partes = f_raw.split('-')
+                        if len(partes) == 3:
+                            fecha_inicio = f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
+                    
+                    nrc_cod = f"{nrc}_{materia}{curso}" if nrc and materia else ""
+                    rut_por_nrc = set()
+                    
+                    # Buscar estudiantes en este bloque
+                    for m in patron_estudiante.finditer(bloque):
+                        rut_raw = m.group(1).upper()
+                        crudo_nombre = m.group(2)
+                        crudo_email = m.group(3)
+                        pidm = m.group(4)
+                        rol_est = m.group(5).strip()
                         
-                    if linea_upper.startswith("CÓDIGO DE CURSO:"):
-                        codigo = linea_str[16:].strip()
-                        partes = codigo.split(".")
-                        if len(partes) >= 3:
-                            materia_completa = partes[0].strip()
-                            periodo = partes[1].strip()
-                            nrc = partes[2].strip()
-                            
-                            match = re.match(r'^([A-Za-z]+)(\d+)$', materia_completa)
-                            if match:
-                                materia = match.group(1).upper()
-                                curso = match.group(2).zfill(3)
-                            else:
-                                materia = materia_completa.upper()
-                                curso = ""
-                        continue
-                        
-                    if linea_upper.startswith("INICIO:"):
-                        fecha_raw = linea_str[7:].strip()
-                        partes_fecha = fecha_raw.split("/")
-                        if len(partes_fecha) == 3:
-                            fecha_inicio = f"{partes_fecha[2]}-{partes_fecha[1].zfill(2)}-{partes_fecha[0].zfill(2)}"
-                        else:
-                            fecha_inicio = fecha_raw
-                        continue
-
-                    # Escanear a todos los estudiantes dentro de la misma línea pegada sin alterar mayúsculas/minúsculas
-                    for match_est in patron_estudiante.finditer(linea_str):
-                        rut_raw = match_est.group(1).upper()
-                        nombre_est = match_est.group(2).strip()
-                        email_est = match_est.group(3).strip()
-                        rol_est = match_est.group(5)
-
-                        # Ignorar docentes (insensibilidad a mayúsculas para la validación del rol)
+                        # Ignorar docentes
                         if rol_est and "ESTUDIANTE" not in rol_est.upper():
                             continue
                             
+                        # TRUCO DE MAGIA: Usar las mayúsculas para separar el apellido que se pegó al correo
+                        match_separacion = re.match(r'^([A-ZÁÉÍÓÚÑÜ]*)([a-z0-9._\-]+@.*)$', crudo_email)
+                        if match_separacion:
+                            apellido = match_separacion.group(1)
+                            email_est = match_separacion.group(2)
+                            nombre_est = " ".join((crudo_nombre + apellido).split())
+                        else:
+                            nombre_est = " ".join(crudo_nombre.split())
+                            email_est = crudo_email.strip()
+                            
+                        # Evitar duplicados
                         clave_dup = f"{nrc}_{rut_raw}"
                         if clave_dup in rut_por_nrc: continue
                         rut_por_nrc.add(clave_dup)
-                        
-                        nrc_cod = f"{nrc}_{materia}{curso}"
                         
                         filas_destino_globales.append([
                             periodo, nrc_cod, nombre_curso, fecha_inicio, 
