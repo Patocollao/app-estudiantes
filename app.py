@@ -109,9 +109,9 @@ if archivos or texto_pegado:
                 nombre_curso, periodo, nrc, materia, curso, fecha_inicio = "", "", "", "", "", ""
                 rut_por_nrc = set()
                 
-                # LA MAGIA: Este patrón extrae correos correctamente y permite buscar múltiples estudiantes en 1 sola línea infinita
+                # LA MAGIA REPARADA: Corta estrictamente después del .edu o .cl para no comerse el PIDM
                 patron_estudiante = re.compile(
-                    r'(\d{7,8}[0-9Kk])\s*(.*?)\s*([a-zA-Z0-9._\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\s*\d*\s*(Estudiante|Docente[^\d]*)?', 
+                    r'(\d{7,8}[0-9Kk])([A-Za-zÁÉÍÓÚÑÜáéíóúñü \-]+?)([a-zA-Z0-9._\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\s*(\d+)\s*(Estudiante|Docente[^\d]*?)(?:\d{2}-\d{2}-\d{4})?', 
                     re.IGNORECASE
                 )
 
@@ -151,13 +151,15 @@ if archivos or texto_pegado:
                             fecha_inicio = fecha_raw
                         continue
 
-                    # EL CAMBIO CLAVE: finditer() escanea toda la línea y atrapa a todos los estudiantes sin importar qué tan pegados estén
+                    # Escanea a todos los estudiantes dentro de la misma línea pegada
                     for match_est in patron_estudiante.finditer(linea_str):
                         rut_raw = match_est.group(1).upper()
                         nombre_est = match_est.group(2).strip()
                         email_est = match_est.group(3).strip()
-                        rol_est = match_est.group(4)
+                        # El grupo 4 es el PIDM (ej. 414003), lo saltamos. El grupo 5 es el Rol.
+                        rol_est = match_est.group(5)
 
+                        # Ignorar docentes
                         if rol_est and "ESTUDIANTE" not in rol_est.upper():
                             continue
                             
