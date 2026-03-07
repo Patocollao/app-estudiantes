@@ -93,7 +93,6 @@ if archivos or texto_pegado:
             else:
                 lista_textos_a_procesar = []
                 
-                # Consolidar todo en líneas de texto simple
                 if "Pegar texto" in tipo_formato and texto_pegado:
                     lista_textos_a_procesar = texto_pegado.split('\n')
                 elif "Descarga Manual Web" in tipo_formato and archivos:
@@ -107,12 +106,14 @@ if archivos or texto_pegado:
                             texto_fila = " ".join([x for x in fila if x])
                             lista_textos_a_procesar.append(texto_fila)
 
-                # Variables para guardar estado
                 nombre_curso, periodo, nrc, materia, curso, fecha_inicio = "", "", "", "", "", ""
                 rut_por_nrc = set()
                 
-                # EL MOTOR PRINCIPAL: Extrae RUT, Nombre, Correo y Rol aunque estén pegados sin espacios
-                patron_estudiante = re.compile(r'^(\d{7,8}[0-9Kk])\s*(.*?)\s*([a-zA-Z0-9._\-]+@[a-zA-Z0-9.\-]+)\s*\d*\s*(Estudiante|Docente.*)?', re.IGNORECASE)
+                # LA MAGIA: Este patrón extrae correos correctamente y permite buscar múltiples estudiantes en 1 sola línea infinita
+                patron_estudiante = re.compile(
+                    r'(\d{7,8}[0-9Kk])\s*(.*?)\s*([a-zA-Z0-9._\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\s*\d*\s*(Estudiante|Docente[^\d]*)?', 
+                    re.IGNORECASE
+                )
 
                 for linea in lista_textos_a_procesar:
                     linea_str = linea.strip()
@@ -150,20 +151,16 @@ if archivos or texto_pegado:
                             fecha_inicio = fecha_raw
                         continue
 
-                    # Pasar el escáner láser por la línea
-                    match_est = patron_estudiante.search(linea_str)
-                    
-                    if match_est:
+                    # EL CAMBIO CLAVE: finditer() escanea toda la línea y atrapa a todos los estudiantes sin importar qué tan pegados estén
+                    for match_est in patron_estudiante.finditer(linea_str):
                         rut_raw = match_est.group(1).upper()
                         nombre_est = match_est.group(2).strip()
                         email_est = match_est.group(3).strip()
                         rol_est = match_est.group(4)
 
-                        # Filtro de Rol: Si dice Docente, lo saltamos
                         if rol_est and "ESTUDIANTE" not in rol_est.upper():
                             continue
                             
-                        # Anti-duplicados por curso
                         clave_dup = f"{nrc}_{rut_raw}"
                         if clave_dup in rut_por_nrc: continue
                         rut_por_nrc.add(clave_dup)
