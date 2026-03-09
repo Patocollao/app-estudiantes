@@ -5,14 +5,15 @@ import re
 
 st.set_page_config(page_title="Formateador SharePoint", page_icon="⚡")
 
-st.title("⚡ Formateador Universal de Estudiantes")
-st.markdown("Sube archivos o pega los datos directamente de la web para obtener tu tabla lista para Power Automate.")
-
-# Pon esto justo debajo de st.title y st.markdown
+# Botón de limpieza rápida en la parte superior
 col1, col2 = st.columns([8, 2])
+with col1:
+    st.title("⚡ Formateador Universal de Estudiantes")
+    st.markdown("Sube archivos o pega los datos directamente de la web para obtener tu tabla lista para Power Automate.")
 with col2:
     if st.button("🧹 Limpiar Todo"):
         st.rerun()
+
 # SELECTOR DE TRES OPCIONES
 tipo_formato = st.radio(
     "Selecciona el método de entrada:",
@@ -61,16 +62,14 @@ if archivos or texto_pegado:
                     def limpiar_fecha(val):
                         val = str(val).split(' ')[0].replace('.0', '')
                         if len(val) == 8 and val.isdigit(): 
-                            # Formato DD-MM-YYYY para el sistema diario
-                            return f"{val[6:]}-{val[4:6]}-{val[:4]}"
+                            return f"{val[:4]}-{val[4:6]}-{val[6:]}"
                         return val
                         
                     if 'FECHA_INICIO' in df.columns:
                         df['FECHA_CLEAN'] = df['FECHA_INICIO'].apply(limpiar_fecha)
-                        # Tratar de formatear a DD-MM-YYYY de forma consistente
-                        df['FECHA_FORMATEADA'] = pd.to_datetime(df['FECHA_CLEAN'], errors='coerce').dt.strftime('%d-%m-%Y').fillna(df['FECHA_CLEAN'])
-                        # Para el filtro con el calendario de Streamlit (que devuelve YYYY-MM-DD), transformamos a DD-MM-YYYY
-                        fecha_str = fecha_filtro.strftime('%d-%m-%Y') if fecha_filtro else ""
+                        # Formato YYYY-MM-DD que exige Power Automate
+                        df['FECHA_FORMATEADA'] = pd.to_datetime(df['FECHA_CLEAN'], errors='coerce').dt.strftime('%Y-%m-%d').fillna(df['FECHA_CLEAN'])
+                        fecha_str = fecha_filtro.strftime('%Y-%m-%d') if fecha_filtro else ""
                         df = df[df['FECHA_FORMATEADA'] == fecha_str].copy()
                     
                     if 'RUT' in df.columns:
@@ -136,14 +135,14 @@ if archivos or texto_pegado:
                     periodo = match_codigo.group(3) if match_codigo else ""
                     nrc = match_codigo.group(4) if match_codigo else ""
                     
-                    # 🗓️ CAMBIO APLICADO: Formateo de fecha estricto a DD-MM-YYYY
+                    # 🗓️ CAMBIO APLICADO: Formato YYYY-MM-DD para satisfacer a Power Automate
                     fecha_inicio = ""
                     if match_inicio:
                         f_raw = match_inicio.group(1).replace('/', '-')
                         partes = f_raw.split('-')
                         if len(partes) == 3:
                             # partes[0] = DD, partes[1] = MM, partes[2] = YYYY
-                            fecha_inicio = f"{partes[0].zfill(2)}-{partes[1].zfill(2)}-{partes[2]}"
+                            fecha_inicio = f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
                     
                     nrc_cod = f"{nrc}_{materia}{curso}" if nrc and materia else ""
                     rut_por_nrc = set()
