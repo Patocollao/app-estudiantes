@@ -268,16 +268,18 @@ if archivos or texto_pegado:
                 
                 st.success(f"¡Éxito total! Se procesaron y consolidaron {max_row} estudiantes.")
                 
-                # ---------------------------------------------------------
-                # --- NUEVO: VISTA PREVIA DE LOS DATOS ANTES DE DESCARGAR ---
-                # ---------------------------------------------------------
+                # --- VISTA PREVIA ---
                 st.markdown("### 👀 Vista previa de los datos")
                 st.dataframe(df_final_maestro, use_container_width=True)
+                
+                # --- DESCARGA CON NOMBRE ÚNICO ---
+                marca_tiempo = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+                nombre_unico = f"Estudiantes_Formateados_{marca_tiempo}.xlsx"
                 
                 st.download_button(
                     label="✅ Descargar Tabla Maestra",
                     data=output,
-                    file_name="Estudiantes_Formateados.xlsx",
+                    file_name=nombre_unico,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
                 
