@@ -330,12 +330,27 @@ with tab2:
                         header_idx = i
                         break
                 
+                # FUNCIÓN SALVAVIDAS: Evita que Pandas colapse si el Excel trae columnas repetidas
+                def deduplicar_columnas(columnas):
+                    vistas = set()
+                    nuevas = []
+                    for c in columnas:
+                        base = str(c)
+                        if base in vistas:
+                            nuevas.append(base + "_REPETIDA")
+                        else:
+                            nuevas.append(base)
+                            vistas.add(base)
+                    return nuevas
+
                 if header_idx != -1:
-                    df_raw.columns = df_raw.iloc[header_idx].astype(str).str.upper().str.strip()
+                    columnas_crudas = df_raw.iloc[header_idx].astype(str).str.upper().str.strip().tolist()
+                    df_raw.columns = deduplicar_columnas(columnas_crudas)
                     df_alumnos = df_raw.iloc[header_idx+1:].copy()
                 else:
                     df_alumnos = df_raw.copy()
-                    df_alumnos.columns = df_alumnos.columns.astype(str).str.upper()
+                    columnas_crudas = df_alumnos.columns.astype(str).str.upper().tolist()
+                    df_alumnos.columns = deduplicar_columnas(columnas_crudas)
 
                 rut_col = next((c for c in df_alumnos.columns if 'RUT' in c or 'ID' in c or 'DOCUMENTO' in c), None)
                 correo_col = next((c for c in df_alumnos.columns if 'CORREO' in c or 'EMAIL' in c or 'E-MAIL' in c), None)
@@ -448,3 +463,7 @@ with tab2:
                         
                         except Exception as e:
                             st.error(f"❌ No se pudo conectar a internet o al túnel: {e}")
+
+        # Este era el "except" que faltaba y causaba el SyntaxError
+        except Exception as e:
+            st.error(f"❌ Hubo un error procesando el archivo: {e}")
