@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import io
 import re
+import requests # LIBRERÍA PARA ENVIAR DATOS A POWER AUTOMATE
 
 st.set_page_config(page_title="Formateador SharePoint", page_icon="⚡", layout="wide")
 
@@ -314,7 +315,7 @@ with tab2:
             with col_b:
                 nrc_induc = st.text_input("NRC Y NOMBRE DE CURSO INDUCC", key="t_nrc")
                 curso_1   = st.text_input("NOMBRE PRIMER CURSO", key="t_cur1")
-                # Format visual en DD/MM/YYYY. (El día de inicio depende del idioma del navegador web).
+                # Format visual en DD/MM/YYYY.
                 fecha_ini = st.date_input("FECHA INICIO INDUCCION", format="DD/MM/YYYY", key="t_fini")
                 fecha_fin = st.date_input("FECHA TERMINO INDUCCION", format="DD/MM/YYYY", key="t_ffin")
             
@@ -324,13 +325,11 @@ with tab2:
                 # --- PASO A: BUSCAR EL ENCABEZADO REAL EN LA TABLA SUCIA ---
                 header_idx = -1
                 for i in range(min(20, len(df_raw))):
-                    # Unimos la fila en un solo texto para buscar palabras clave
                     row_str = " ".join(df_raw.iloc[i].dropna().astype(str).str.upper())
                     if ('RUT' in row_str or 'ID' in row_str) and ('CORREO' in row_str or 'EMAIL' in row_str):
                         header_idx = i
                         break
                 
-                # Cortar la tabla desde donde encontramos los encabezados reales
                 if header_idx != -1:
                     df_raw.columns = df_raw.iloc[header_idx].astype(str).str.upper().str.strip()
                     df_alumnos = df_raw.iloc[header_idx+1:].copy()
@@ -338,24 +337,19 @@ with tab2:
                     df_alumnos = df_raw.copy()
                     df_alumnos.columns = df_alumnos.columns.astype(str).str.upper()
 
-                # --- PASO B: IDENTIFICAR COLUMNAS DE NOMBRE, RUT Y CORREO ---
                 rut_col = next((c for c in df_alumnos.columns if 'RUT' in c or 'ID' in c or 'DOCUMENTO' in c), None)
                 correo_col = next((c for c in df_alumnos.columns if 'CORREO' in c or 'EMAIL' in c or 'E-MAIL' in c), None)
                 nombre_cols = [c for c in df_alumnos.columns if 'NOMBRE' in c and 'PROGRAMA' not in c and 'TUTOR' not in c]
                 apellido_cols = [c for c in df_alumnos.columns if 'APELLIDO' in c]
 
-                # --- PASO C: CONSTRUIR LA PLANTILLA FILA POR FILA ---
                 salida_datos = []
                 contador = 1
                 
                 for _, row in df_alumnos.iterrows():
                     row_str = " ".join(row.dropna().astype(str))
-                    
-                    # Filtro de seguridad: Si la fila no tiene un @correo, la ignoramos (suele ser basura o celdas vacías)
                     if not re.search(r'@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', row_str):
                         continue 
                         
-                    # Extraer RUT
                     rut = ""
                     if rut_col and pd.notna(row.get(rut_col)):
                         rut = str(row[rut_col]).replace('.0', '').strip()
@@ -363,7 +357,6 @@ with tab2:
                         rut_m = re.search(r'\b(\d{7,8}[-]*[0-9Kk])\b', row_str)
                         rut = rut_m.group(1) if rut_m else ""
 
-                    # Extraer Correo
                     correo = ""
                     if correo_col and pd.notna(row.get(correo_col)):
                         correo = str(row[correo_col]).strip()
@@ -371,14 +364,12 @@ with tab2:
                         em_m = re.search(r'[a-zA-Z0-9._\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', row_str)
                         correo = em_m.group(0) if em_m else ""
                         
-                    # Extraer Nombres (unificando Nombre + Apellido si vienen separados)
                     n_parts = []
                     if nombre_cols: n_parts.append(str(row[nombre_cols[0]]).strip())
                     if apellido_cols: n_parts.append(str(row[apellido_cols[0]]).strip())
                     
                     nombres = " ".join([p for p in n_parts if p and p.lower() != 'nan']).strip()
                     
-                    # Estructura EXACTA de la plantilla que me enviaste
                     salida_datos.append({
                         "Columna1": contador,
                         "NOMBRES": nombres.upper(),
@@ -390,15 +381,14 @@ with tab2:
                         "NOMBRE DE PROGRAMA": programa,
                         "NRC Y NOMBRE DE CURSO INDUCC": nrc_induc,
                         "NOMBRE PRIMER CURSO": curso_1,
-                        "FECHA INICIO INDUCCION": fecha_ini.strftime("%Y-%m-%d"), # Formato YYYY-MM-DD
-                        "FECHA TERMINO INDUCCION": fecha_fin.strftime("%Y-%m-%d"), # Formato YYYY-MM-DD
-                        "FECHA_INICIO_CALCULADA": fecha_ini.strftime("%d-%m-%Y"),   # Formato DD-MM-YYYY
-                        "FECHA FIN CALCULADA": fecha_fin.strftime("%d-%m-%Y"),      # Formato DD-MM-YYYY
+                        "FECHA INICIO INDUCCION": fecha_ini.strftime("%Y-%m-%d"),
+                        "FECHA TERMINO INDUCCION": fecha_fin.strftime("%Y-%m-%d"),
+                        "FECHA_INICIO_CALCULADA": fecha_ini.strftime("%d-%m-%Y"),
+                        "FECHA FIN CALCULADA": fecha_fin.strftime("%d-%m-%Y"),
                         "Columna2": ""
                     })
                     contador += 1
                 
-                # --- PASO D: CREAR EL EXCEL FINAL ---
                 columnas_plantilla = [
                     "Columna1", "NOMBRES", "Rut o ID", "CORREO", 
                     "NOMBRE TUTOR", "CORREO TUTOR", "ANEXO TUTOR", 
@@ -410,7 +400,8 @@ with tab2:
                 
                 df_final_correos = pd.DataFrame(salida_datos, columns=columnas_plantilla)
                 
-                st.write("👀 Vista previa de la Plantilla Generada (Lista para Power Automate):")
+                # --- PASO D: VISTA PREVIA Y DESCARGA (COMO RESPALDO) ---
+                st.write("👀 Vista previa de la Plantilla Generada:")
                 st.dataframe(df_final_correos.head(5), use_container_width=True)
                 
                 output_correos = io.BytesIO()
@@ -418,14 +409,42 @@ with tab2:
                     df_final_correos.to_excel(writer, index=False, sheet_name='Hoja1')
                 output_correos.seek(0)
                 
+                # Guardamos el DataFrame en el estado de Streamlit para usarlo en la automatización
+                st.session_state['datos_procesados'] = df_final_correos
+                
                 st.success("🎉 ¡Plantilla generada con éxito y sin basura!")
                 st.download_button(
-                    label="📥 Descargar Plantilla Formateada",
+                    label="📥 Descargar Excel (Opción Manual)",
                     data=output_correos,
                     file_name="Plantilla_Correos_Bienvenida.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="dl_correos"
                 )
+
+            # --- PASO E: ZONA DE AUTOMATIZACIÓN WEBHOOK ---
+            if 'datos_procesados' in st.session_state:
+                st.divider()
+                st.markdown("### 🚀 Nivel Experto: Disparador 100% Automático")
+                st.write("Haz clic en el botón para enviar la lista directamente a Power Automate sin descargar nada.")
                 
-        except Exception as e:
-            st.error(f"Hubo un error al procesar la plantilla: {e}")
+                # URL secreta de tu túnel (Webhook) incrustada
+                webhook_url = "https://default8fbed393d03b49f8be79cd5e1f590f.b2.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/116abc48d2194f8e925b7b3d57b15d85/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=1zArAdSz1df7OFOaYP6Xu8AOH3wrqTnxOADV7G5inks"
+                
+                if st.button("📨 Enviar directamente a Power Automate", type="primary"):
+                    with st.spinner("Conectando con Power Automate e iniciando envíos..."):
+                        # Convertimos la tabla de pandas a un JSON perfecto para Power Automate
+                        payload_json = st.session_state['datos_procesados'].to_dict(orient="records")
+                        
+                        try:
+                            # Disparamos la información por el túnel
+                            response = requests.post(webhook_url, json=payload_json)
+                            
+                            # Verificamos si Power Automate respondió "OK" (200 o 202)
+                            if response.status_code in [200, 202]:
+                                st.success(f"✅ ¡Transferencia exitosa! Power Automate acaba de recibir {len(st.session_state['datos_procesados'])} estudiantes y comenzó a enviar los correos.")
+                                st.balloons()
+                            else:
+                                st.error(f"❌ Error en la conexión. Power Automate respondió: {response.status_code} - {response.text}")
+                        
+                        except Exception as e:
+                            st.error(f"❌ No se pudo conectar a internet o al túnel: {e}")
