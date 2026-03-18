@@ -78,7 +78,7 @@ with col2:
 tab1, tab2 = st.tabs(["📋 Formateador Nóminas SharePoint", "📧 Generador Correos Bienvenida"])
 
 # =====================================================================
-# PESTAÑA 1: TU CÓDIGO ORIGINAL (NÓMINAS)
+# PESTAÑA 1: TU CÓDIGO ORIGINAL (NÓMINAS) + NUEVO FILTRO NRC
 # =====================================================================
 with tab1:
     st.header("Formateador Universal de Estudiantes")
@@ -96,10 +96,18 @@ with tab1:
     archivos = None
     texto_pegado = ""
     fecha_filtro = None
+    filtro_nrc = "" # Variable inicializada para el nuevo filtro
 
     if "Sistema Diario" in tipo_formato:
-        st.info("💡 Selecciona la fecha a filtrar.")
-        fecha_filtro = st.date_input("📅 Fecha a filtrar", format="DD/MM/YYYY")
+        st.info("💡 Selecciona la fecha y (opcionalmente) los códigos NRC a filtrar.")
+        
+        # ACA AGREGAMOS EL CUADRO AL LADO DE LA FECHA
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_filtro = st.date_input("📅 Fecha a filtrar", format="DD/MM/YYYY")
+        with col_f2:
+            filtro_nrc = st.text_input("🔍 Filtrar por NRC_COD (Ej: 2201_UNI118). Separar con comas.")
+            
         archivos = st.file_uploader("📥 Sube los archivos", type=["xlsx", "xls", "csv"], accept_multiple_files=True)
 
     elif "Descarga Manual Web" in tipo_formato:
@@ -242,8 +250,16 @@ with tab1:
                     ])
                     df_final_maestro = df_final_maestro.replace("nan", "")
                     
+                    # --- APLICACIÓN DEL NUEVO FILTRO NRC_COD ---
+                    if filtro_nrc and filtro_nrc.strip():
+                        # Separa los códigos por comas y quita espacios
+                        lista_nrc_buscados = [x.strip().upper() for x in filtro_nrc.split(',')]
+                        # Filtra la tabla maestra para dejar solo los NRC seleccionados
+                        df_final_maestro = df_final_maestro[df_final_maestro['NRC_COD'].str.upper().isin(lista_nrc_buscados)]
+                    # ---------------------------------------------
+                    
                     if df_final_maestro.empty:
-                        st.warning("⚠️ El proceso terminó, pero no se extrajo ningún estudiante. Asegúrate de estar copiando desde la palabra 'NOMBRE:' hasta el final de la tabla.")
+                        st.warning("⚠️ El proceso terminó, pero no hay datos. Verifica si los filtros de Fecha o NRC_COD son correctos o si el formato del archivo es válido.")
                         st.stop()
                     
                     output = io.BytesIO()
@@ -331,7 +347,7 @@ with tab2:
                         break
                 
                 # FUNCIÓN SALVAVIDAS: Evita que Pandas colapse si el Excel trae columnas repetidas
-                def deduplicar_columnas(columnas):
+                def deduplicar_columnas_correos(columnas):
                     vistas = set()
                     nuevas = []
                     for c in columnas:
@@ -345,12 +361,12 @@ with tab2:
 
                 if header_idx != -1:
                     columnas_crudas = df_raw.iloc[header_idx].astype(str).str.upper().str.strip().tolist()
-                    df_raw.columns = deduplicar_columnas(columnas_crudas)
+                    df_raw.columns = deduplicar_columnas_correos(columnas_crudas)
                     df_alumnos = df_raw.iloc[header_idx+1:].copy()
                 else:
                     df_alumnos = df_raw.copy()
                     columnas_crudas = df_alumnos.columns.astype(str).str.upper().tolist()
-                    df_alumnos.columns = deduplicar_columnas(columnas_crudas)
+                    df_alumnos.columns = deduplicar_columnas_correos(columnas_crudas)
 
                 rut_col = next((c for c in df_alumnos.columns if 'RUT' in c or 'ID' in c or 'DOCUMENTO' in c), None)
                 correo_col = next((c for c in df_alumnos.columns if 'CORREO' in c or 'EMAIL' in c or 'E-MAIL' in c), None)
